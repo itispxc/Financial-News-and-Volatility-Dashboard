@@ -12,6 +12,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from webdriver_manager.firefox import GeckoDriverManager
 from itertools import combinations
+import re
+from datetime import datetime
+import pytz
+import yfinance as yf
 
 # Function to fetch articles from Financial Times
 def fetch_ft_articles(keywords, num_links):
@@ -90,29 +94,60 @@ def fetch_bloomberg_article_urls(keywords, num_links):
         driver.quit()
         return []
 
-# Function to fetch article titles from Bloomberg URLs
-def fetch_bloomberg_articles(urls):
+# Function to extract titles from Bloomberg URLs
+def get_titles_from_urls(urls):
     articles = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-
     for url in urls:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        html = response.text
-
-        soup = BeautifulSoup(html, 'html.parser')
-        title = soup.find('title').get_text(strip=True)
-        articles.append({'title': title, 'url': url})
-
+        # Extract the title from the URL
+        match = re.search(r'https://www.bloomberg.com/news/[^/]+/\d{4}-\d{2}-\d{2}/(.+)$', url)
+        if match:
+            title = match.group(1).replace('-', ' ').title()
+            articles.append({'title': title, 'url': url})
     return articles
 
 def get_combinations(keywords, r):
     return list(combinations(keywords, r))
 
+# Function to fetch volatility data from Yahoo Finance
+def fetch_volatility_data():
+    sectors = {
+        "XLE": "Energy",
+        "XLF": "Financials",
+        "XLK": "Technology",
+        "XLY": "Consumer Discretionary",
+        "XLP": "Consumer Staples",
+        "XLV": "Health Care",
+        "XLI": "Industrials",
+        "XLB": "Materials",
+        "XLRE": "Real Estate",
+        "XLU": "Utilities"
+    }
+    volatility_data = []
+    for symbol, sector in sectors.items():
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="1mo")
+        volatility = hist['Close'].pct_change().std() * (252**0.5)  # Annualized volatility
+        volatility_data.append((sector, volatility))
+    return sorted(volatility_data, key=lambda x: x[1], reverse=True)
+
+# Get current date and time in Hong Kong
+hk_tz = pytz.timezone('Asia/Hong_Kong')
+hk_time = datetime.now(hk_tz)
+current_date = hk_time.strftime('%B %d, %Y')
+current_hour = hk_time.hour
+
+# Determine the greeting based on the current time in Hong Kong
+if 5 <= current_hour < 12:
+    greeting = "Good Morning"
+elif 12 <= current_hour < 18:
+    greeting = "Good Afternoon"
+else:
+    greeting = "Good Night"
+
 # Streamlit web application
-st.title("Good Morning Sir")
+st.title(f"{greeting} Pegah")
+st.markdown(f"## Today is {current_date} and here are the latest news:")
+
 st.write("Please enter the number of keywords you want to search for (up to 10):")
 num_keywords = st.slider("Number of Keywords", 1, 10, 3)
 
@@ -149,8 +184,23 @@ if st.button("Fetch Articles"):
                 except Exception as e:
                     st.write(f"Error fetching articles for combination {combo}: {e}")
 
-        bloomberg_articles = fetch_bloomberg_articles(bloomberg_urls)
+        # Extract titles from URLs
+        bloomberg_articles = get_titles_from_urls(bloomberg_urls)
         for i, article in enumerate(bloomberg_articles, start=1):
             st.write(f"{i}. [{article['title']}]({article['url']})")
     else:
         st.write("Please enter at least one keyword.")
+
+# Volatility Check Section
+st.write("## Volatility Check")
+volatility_data = fetch_volatility_data()
+st.write("### Most Volatile Sectors:")
+for sector, volatility in volatility_data:
+    st.write(f"{sector}: {volatility:.2%}")
+
+# Recent News Impact Section
+st.write("## Recent News Impact")
+st.write("Fetching latest news that might impact the market...")
+# You can integrate a news API here to fetch and display recent impactful news.
+# For the sake of this example, we will display a placeholder message.
+st.write("Placeholder for recent impactful news...")
